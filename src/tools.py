@@ -35,6 +35,23 @@ class AmadeusHotelsTools:
             max_retries=self.settings.max_retries,
         )
     
+    async def health_check(self) -> str:
+        """
+        Check the health status of the Amadeus API connection.
+        
+        Returns:
+            Status message indicating API connectivity
+        """
+        try:
+            is_healthy = await self.client.health_check()
+            if is_healthy:
+                return "✅ Amadeus API is accessible and authentication is working"
+            else:
+                return "❌ Amadeus API is not accessible or authentication failed"
+        except Exception as e:
+            logger.error(f"Health check error: {e}")
+            return f"❌ Health check failed: {str(e)}"
+    
     def register_tools(self, mcp: FastMCP) -> None:
         """Register all tools with the MCP server."""
         
