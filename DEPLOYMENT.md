@@ -260,3 +260,4 @@ For deployment issues:
 - Check the [Render Documentation](https://render.com/docs)
 - Review Docker and platform-specific logs
 - Refer to the main README.md for application details
+

@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: amadeus-hotels-mcp-server
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    port: 3000
+    autoDeploy: false
+    healthCheckPath: /mcp
+    envVars:
+      - key: AMADEUS_API_KEY
+        sync: false
+      - key: AMADEUS_API_SECRET
+        sync: false
+      - key: AMADEUS_BASE_URL
+        value: https://test.api.amadeus.com
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 3000
+      - key: LOG_LEVEL
+        value: INFO
+
