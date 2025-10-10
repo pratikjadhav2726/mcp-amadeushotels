@@ -5,7 +5,6 @@ description = "MCP server for Amadeus Hotels APIs"
 authors = [
     {name = "Your Name", email = "your.email@example.com"}
 ]
-readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.0.0",

@@ -50,7 +50,6 @@ mypy_cache/
 # Documentation
 docs/
 *.md
-README.md
 
 # Version control
 .git/
