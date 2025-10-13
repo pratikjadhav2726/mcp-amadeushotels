@@ -76,6 +76,9 @@ def create_mcp_server() -> Server:
                 result = await tools.search_hotel_offers(**arguments)
             elif name == "health_check":
                 result = await tools.health_check()
+            # DISABLED: Hotel Booking v2 tool handler
+            # elif name == "book_hotel":
+            #     result = await tools.book_hotel(**arguments)
             else:
                 result = f"Unknown tool: {name}"
             
@@ -133,6 +136,33 @@ def create_mcp_server() -> Server:
                 description="Check the health status of the Amadeus API connection",
                 inputSchema={"type": "object", "properties": {}},
             ),
+            # DISABLED: Hotel Booking v2 tool
+            # This tool is implemented but disabled for security and compliance reasons
+            # Uncomment and enable only when proper payment processing and compliance measures are in place
+            #
+            # types.Tool(
+            #     name="book_hotel",
+            #     description="Book a hotel using Hotel Booking v2 API (DISABLED)",
+            #     inputSchema={
+            #         "type": "object",
+            #         "required": ["offer_id", "guests", "room_associations", "payment"],
+            #         "properties": {
+            #             "offer_id": {"type": "string", "description": "Hotel offer ID from search results"},
+            #             "guests": {
+            #                 "type": "array",
+            #                 "items": {"type": "object"},
+            #                 "description": "List of guest information"
+            #             },
+            #             "room_associations": {
+            #                 "type": "array",
+            #                 "items": {"type": "object"},
+            #                 "description": "Room to guest associations"
+            #             },
+            #             "payment": {"type": "object", "description": "Payment information"},
+            #             "travel_agent": {"type": "object", "description": "Optional travel agent information"},
+            #         },
+            #     },
+            # ),
         ]
     
     return app

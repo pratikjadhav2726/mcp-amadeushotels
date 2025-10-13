@@ -211,3 +211,63 @@ class AmadeusError(BaseModel):
 class AmadeusErrorResponse(BaseModel):
     """Amadeus API error response wrapper."""
     errors: List[AmadeusError] = Field(..., description="List of errors")
+
+
+# Hotel Booking v2 Models (DISABLED - for future implementation)
+
+class GuestContact(BaseModel):
+    """Guest contact information."""
+    phone: Optional[str] = Field(None, description="Phone number")
+    email: Optional[str] = Field(None, description="Email address")
+
+
+class GuestName(BaseModel):
+    """Guest name information."""
+    title: Optional[str] = Field(None, description="Title (Mr, Mrs, etc.)")
+    first_name: str = Field(..., alias="firstName", description="First name")
+    last_name: str = Field(..., alias="lastName", description="Last name")
+
+
+class Guest(BaseModel):
+    """Guest information for booking."""
+    contact: Optional[GuestContact] = Field(None, description="Contact information")
+    name: GuestName = Field(..., description="Guest name")
+
+
+class TravelAgent(BaseModel):
+    """Travel agent information."""
+    name: Optional[str] = Field(None, description="Travel agent name")
+    code: Optional[str] = Field(None, description="Travel agent code")
+
+
+class RoomAssociation(BaseModel):
+    """Room association for booking."""
+    room_id: str = Field(..., alias="roomId", description="Room ID")
+    guest_ids: List[str] = Field(..., alias="guestIds", description="Guest IDs")
+
+
+class PaymentCard(BaseModel):
+    """Payment card information."""
+    vendor_code: str = Field(..., alias="vendorCode", description="Card vendor code")
+    card_number: str = Field(..., alias="cardNumber", description="Card number")
+    expiry_date: str = Field(..., alias="expiryDate", description="Expiry date (MM/YY)")
+
+
+class Payment(BaseModel):
+    """Payment information."""
+    method: str = Field(..., description="Payment method")
+    card: Optional[PaymentCard] = Field(None, description="Card information")
+
+
+class HotelBookingRequest(BaseModel):
+    """Request for hotel booking."""
+    offer_id: str = Field(..., alias="offerId", description="Hotel offer ID")
+    guests: List[Guest] = Field(..., description="List of guests")
+    travel_agent: Optional[TravelAgent] = Field(None, alias="travelAgent", description="Travel agent info")
+    room_associations: List[RoomAssociation] = Field(..., alias="roomAssociations", description="Room associations")
+    payment: Payment = Field(..., description="Payment information")
+
+
+class HotelBookingResponse(BaseModel):
+    """Response from hotel booking API."""
+    data: Dict[str, Any] = Field(..., description="Booking response data")

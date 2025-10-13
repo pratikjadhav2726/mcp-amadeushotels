@@ -1,14 +1,13 @@
 """
-Amadeus API client for hotels services.
+Amadeus API client for hotels services using the official SDK.
 """
 
-import asyncio
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import date
 
-import httpx
-from pydantic import ValidationError
+from amadeus import Client, Response
+from amadeus.client.errors import ResponseError, ClientError, ServerError, NetworkError, AuthenticationError
 
 try:
     from .models import (
@@ -16,6 +15,8 @@ try:
         HotelsListResponse,
         HotelOffersRequest,
         HotelOffersResponse,
+        HotelBookingRequest,
+        HotelBookingResponse,
         AmadeusErrorResponse,
     )
 except ImportError:
@@ -25,6 +26,8 @@ except ImportError:
         HotelsListResponse,
         HotelOffersRequest,
         HotelOffersResponse,
+        HotelBookingRequest,
+        HotelBookingResponse,
         AmadeusErrorResponse,
     )
 
@@ -51,7 +54,7 @@ class AmadeusRateLimitError(AmadeusAPIError):
 
 
 class AmadeusClient:
-    """Client for Amadeus Hotels API."""
+    """Client for Amadeus Hotels API using the official SDK."""
     
     def __init__(
         self,
@@ -66,176 +69,179 @@ class AmadeusClient:
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
         self.max_retries = max_retries
-        self._access_token: Optional[str] = None
-        self._token_expires_at: Optional[float] = None
         
-    async def _get_access_token(self) -> str:
-        """Get or refresh access token."""
-        import time
+        # Initialize the official Amadeus SDK client
+        # Determine hostname based on base_url
+        if 'test.api.amadeus.com' in base_url:
+            hostname = 'test'
+        elif 'api.amadeus.com' in base_url:
+            hostname = 'production'
+        else:
+            hostname = 'test'  # Default to test environment
         
-        # Check if we have a valid token
-        if self._access_token and self._token_expires_at and time.time() < self._token_expires_at:
-            return self._access_token
-            
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            try:
-                response = await client.post(
-                    f"{self.base_url}/v1/security/oauth2/token",
-                    data={
-                        "grant_type": "client_credentials",
-                        "client_id": self.api_key,
-                        "client_secret": self.api_secret,
-                    },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
-                response.raise_for_status()
-                
-                token_data = response.json()
-                self._access_token = token_data["access_token"]
-                # Set expiration time (subtract 60 seconds for safety)
-                expires_in = token_data.get("expires_in", 1800)  # Default 30 minutes
-                self._token_expires_at = time.time() + expires_in - 60
-                
-                logger.debug("Successfully obtained access token")
-                return self._access_token
-                
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 401:
-                    raise AmadeusAuthenticationError("Invalid API credentials")
-                raise AmadeusAPIError(f"Failed to get access token: {e.response.status_code}")
-            except httpx.RequestError as e:
-                raise AmadeusAPIError(f"Network error while getting access token: {str(e)}")
+        self.client = Client(
+            client_id=api_key,
+            client_secret=api_secret,
+            hostname=hostname,
+            log_level='silent'  # We'll handle logging ourselves
+        )
     
-    async def _make_request(
-        self,
-        method: str,
-        endpoint: str,
-        params: Optional[Dict[str, Any]] = None,
-        retry_count: int = 0,
-    ) -> Dict[str, Any]:
-        """Make authenticated request to Amadeus API."""
-        token = await self._get_access_token()
-        
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.amadeus+json",
-        }
-        
-        url = f"{self.base_url}{endpoint}"
-        
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            try:
-                if method.upper() == "GET":
-                    response = await client.get(url, headers=headers, params=params)
-                else:
-                    response = await client.request(method, url, headers=headers, json=params)
-                
-                # Handle rate limiting
-                if response.status_code == 429:
-                    if retry_count < self.max_retries:
-                        retry_after = int(response.headers.get("Retry-After", 1))
-                        logger.warning(f"Rate limited, retrying after {retry_after} seconds")
-                        await asyncio.sleep(retry_after)
-                        return await self._make_request(method, endpoint, params, retry_count + 1)
-                    else:
-                        raise AmadeusRateLimitError("Rate limit exceeded, max retries reached")
-                
-                # Handle authentication errors
-                if response.status_code == 401:
-                    # Token might be expired, try to refresh
-                    if retry_count == 0:
-                        self._access_token = None
-                        self._token_expires_at = None
-                        return await self._make_request(method, endpoint, params, retry_count + 1)
-                    else:
-                        raise AmadeusAuthenticationError("Authentication failed")
-                
-                response.raise_for_status()
-                return response.json()
-                
-            except httpx.HTTPStatusError as e:
-                # Try to parse error response
+    def _handle_sdk_error(self, error: Exception) -> None:
+        """Convert SDK errors to our custom exceptions."""
+        if isinstance(error, AuthenticationError):
+            raise AmadeusAuthenticationError("Invalid API credentials")
+        elif isinstance(error, ResponseError):
+            # Try to extract error details from the response
+            if hasattr(error, 'response') and error.response:
                 try:
-                    error_data = e.response.json()
-                    error_response = AmadeusErrorResponse(**error_data)
-                    error = error_response.errors[0] if error_response.errors else None
-                    
-                    if error:
-                        raise AmadeusAPIError(
-                            f"Amadeus API error: {error.title} - {error.detail or 'No details'}",
-                            status_code=error.status,
-                            error_code=error.code,
-                        )
-                    else:
-                        raise AmadeusAPIError(f"HTTP {e.response.status_code}: {e.response.text}")
-                        
-                except (ValidationError, KeyError):
-                    raise AmadeusAPIError(f"HTTP {e.response.status_code}: {e.response.text}")
-                    
-            except httpx.RequestError as e:
-                raise AmadeusAPIError(f"Network error: {str(e)}")
+                    error_data = error.response.body
+                    if isinstance(error_data, dict) and 'errors' in error_data:
+                        error_list = error_data['errors']
+                        if error_list:
+                            first_error = error_list[0]
+                            status_code = first_error.get('status', error.response.status_code)
+                            error_code = first_error.get('code')
+                            title = first_error.get('title', 'Unknown error')
+                            detail = first_error.get('detail', 'No details available')
+                            
+                            if status_code == 429:
+                                raise AmadeusRateLimitError(f"Rate limit exceeded: {title} - {detail}")
+                            else:
+                                raise AmadeusAPIError(f"Amadeus API error: {title} - {detail}", status_code, error_code)
+                except (KeyError, TypeError, AttributeError):
+                    pass
+            
+            # Fallback error handling
+            if error.response and error.response.status_code == 429:
+                raise AmadeusRateLimitError("Rate limit exceeded")
+            elif error.response and error.response.status_code == 401:
+                raise AmadeusAuthenticationError("Authentication failed")
+            else:
+                status_code = error.response.status_code if error.response else None
+                raise AmadeusAPIError(f"API error: {str(error)}", status_code)
+        elif isinstance(error, (NetworkError, ClientError)):
+            raise AmadeusAPIError(f"Network error: {str(error)}")
+        else:
+            raise AmadeusAPIError(f"Unexpected error: {str(error)}")
     
     async def search_hotels_by_location(self, request: HotelsListRequest) -> HotelsListResponse:
-        """Search for hotels by location."""
-        params = {
-            "latitude": request.latitude,
-            "longitude": request.longitude,
-            "radius": request.radius,
-            "radiusUnit": request.radius_unit,
-        }
-        
-        # Add optional parameters
-        if request.chain_codes:
-            params["chainCodes"] = ",".join(request.chain_codes)
-        if request.amenities:
-            params["amenities"] = ",".join(request.amenities)
-        if request.ratings:
-            params["ratings"] = ",".join(request.ratings)
-        if request.hotel_source:
-            params["hotelSource"] = request.hotel_source
-        
+        """Search for hotels by location using the SDK."""
         try:
-            response_data = await self._make_request("GET", "/v1/reference-data/locations/hotels/by-geocode", params)
+            # Prepare parameters for the SDK call
+            params = {
+                "latitude": request.latitude,
+                "longitude": request.longitude,
+                "radius": request.radius,
+                "radiusUnit": request.radius_unit,
+            }
+            
+            # Add optional parameters
+            if request.chain_codes:
+                params["chainCodes"] = ",".join(request.chain_codes)
+            if request.amenities:
+                params["amenities"] = ",".join(request.amenities)
+            if request.ratings:
+                params["ratings"] = ",".join(request.ratings)
+            if request.hotel_source:
+                params["hotelSource"] = request.hotel_source
+            
+            # Make the API call using the SDK
+            response = self.client.reference_data.locations.hotels.by_geocode.get(**params)
+            
+            # Convert SDK response to our model
+            # The SDK returns the data directly, so we need to wrap it in the expected format
+            response_data = {
+                "data": response.data,
+                "meta": {}  # SDK doesn't return meta, so we provide empty dict
+            }
             return HotelsListResponse(**response_data)
-        except ValidationError as e:
-            logger.error(f"Validation error parsing hotels list response: {e}")
-            raise AmadeusAPIError(f"Invalid response format: {str(e)}")
+            
+        except Exception as e:
+            logger.error(f"Error searching hotels by location: {e}")
+            self._handle_sdk_error(e)
     
     async def search_hotel_offers(self, request: HotelOffersRequest) -> HotelOffersResponse:
-        """Search for hotel offers."""
-        params = {
-            "hotelIds": ",".join(request.hotel_ids),
-            "adults": request.adults,
-            "checkInDate": request.check_in_date.strftime("%Y-%m-%d"),
-            "checkOutDate": request.check_out_date.strftime("%Y-%m-%d"),
-            "roomQuantity": request.room_quantity,
-            "paymentPolicy": request.payment_policy,
-            "bestRateOnly": request.best_rate_only,
-            "includeClosed": request.include_closed,
-        }
-        
-        # Add optional parameters
-        if request.currency:
-            params["currency"] = request.currency
-        if request.price_range:
-            params["priceRange"] = request.price_range
-        if request.board_type:
-            params["boardType"] = request.board_type
-        if request.lang:
-            params["lang"] = request.lang
-        
+        """Search for hotel offers using the SDK."""
         try:
-            response_data = await self._make_request("GET", "/v3/shopping/hotel-offers", params)
+            # Prepare parameters for the SDK call
+            params = {
+                "hotelIds": ",".join(request.hotel_ids),
+                "adults": request.adults,
+                "checkInDate": request.check_in_date.strftime("%Y-%m-%d"),
+                "checkOutDate": request.check_out_date.strftime("%Y-%m-%d"),
+                "roomQuantity": request.room_quantity,
+                "paymentPolicy": request.payment_policy,
+                "bestRateOnly": request.best_rate_only,
+                "includeClosed": request.include_closed,
+            }
+            
+            # Add optional parameters
+            if request.currency:
+                params["currency"] = request.currency
+            if request.price_range:
+                params["priceRange"] = request.price_range
+            if request.board_type:
+                params["boardType"] = request.board_type
+            if request.lang:
+                params["lang"] = request.lang
+            
+            # Make the API call using the SDK
+            response = self.client.shopping.hotel_offers_search.get(**params)
+            
+            # Convert SDK response to our model
+            # The SDK returns the data directly, so we need to wrap it in the expected format
+            response_data = {
+                "data": response.data
+            }
             return HotelOffersResponse(**response_data)
-        except ValidationError as e:
-            logger.error(f"Validation error parsing hotel offers response: {e}")
-            raise AmadeusAPIError(f"Invalid response format: {str(e)}")
+            
+        except Exception as e:
+            logger.error(f"Error searching hotel offers: {e}")
+            self._handle_sdk_error(e)
     
     async def health_check(self) -> bool:
-        """Check if the API is accessible."""
+        """Check if the API is accessible using the SDK."""
         try:
-            await self._get_access_token()
+            # Try to make a simple API call to test connectivity
+            # We'll use the hotels by geocode endpoint with a simple test
+            test_response = self.client.reference_data.locations.hotels.by_geocode.get(
+                latitude=40.41436995,
+                longitude=-3.69170868,
+                radius=1
+            )
             return True
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return False
+    
+    # DISABLED: Hotel Booking v2 functionality
+    # This method is implemented but disabled for security and compliance reasons
+    # Uncomment and enable only when proper payment processing and compliance measures are in place
+    
+    # async def book_hotel(self, request: HotelBookingRequest) -> HotelBookingResponse:
+    #     """Book a hotel using Hotel Booking v2 API (DISABLED)."""
+    #     try:
+    #         # Prepare booking data for the SDK
+    #         booking_data = {
+    #             "offerId": request.offer_id,
+    #             "guests": [guest.dict(by_alias=True) for guest in request.guests],
+    #             "roomAssociations": [room.dict(by_alias=True) for room in request.room_associations],
+    #             "payment": request.payment.dict(by_alias=True),
+    #         }
+    #         
+    #         # Add travel agent if provided
+    #         if request.travel_agent:
+    #             booking_data["travelAgent"] = request.travel_agent.dict(by_alias=True)
+    #         
+    #         # Make the booking API call using the SDK
+    #         response = self.client.booking.hotel_orders.post(booking_data)
+    #         
+    #         # Convert SDK response to our model
+    #         response_data = {
+    #             "data": response.data
+    #         }
+    #         return HotelBookingResponse(**response_data)
+    #         
+    #     except Exception as e:
+    #         logger.error(f"Error booking hotel: {e}")
+    #         self._handle_sdk_error(e)

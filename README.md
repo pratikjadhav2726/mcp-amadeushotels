@@ -1,12 +1,13 @@
 # MCP Amadeus Hotels Server
 
-A Model Context Protocol (MCP) server that provides access to Amadeus Hotels APIs for finding hotels by location and getting pricing information.
+A Model Context Protocol (MCP) server that provides access to Amadeus Hotels APIs for finding hotels by location and getting pricing information. This server uses the official [Amadeus Python SDK](https://github.com/amadeus4dev/amadeus-python) for reliable API integration.
 
 ## Features
 
 - **Hotel List Tool**: Find hotels by geocode/city with distance information
 - **Hotel Search Tool**: Get hotel prices and availability for specific hotels
 - Built with FastMCP for optimal performance
+- Uses official Amadeus Python SDK for robust API integration
 - Comprehensive error handling and validation
 - Type-safe with Pydantic models
 
@@ -181,6 +182,12 @@ uv run examples/example_usage.py
 
 ## API Reference
 
-This server integrates with the following Amadeus APIs:
+This server integrates with the following Amadeus APIs using the official Python SDK:
 - [Hotels List API](https://developers.amadeus.com/self-service/category/hotel/api-doc/hotel-list)
 - [Hotel Offers API](https://developers.amadeus.com/self-service/category/hotel/api-doc/hotel-offers)
+
+The server uses the [Amadeus Python SDK](https://github.com/amadeus4dev/amadeus-python) (v12.0.0+) which provides:
+- Automatic authentication and token management
+- Built-in error handling and retry logic
+- Rate limiting protection
+- Consistent API response handling
