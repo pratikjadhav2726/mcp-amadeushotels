@@ -11,12 +11,12 @@ from mcp.types import Tool, TextContent
 
 try:
     from .amadeus_client import AmadeusClient, AmadeusAPIError, AmadeusAuthenticationError, AmadeusRateLimitError
-    from .models import HotelsListRequest, HotelOffersRequest
+    from .models import HotelsListRequest, HotelOffersRequest, HotelBookingRequest
     from .config import get_app_settings
 except ImportError:
     # Handle direct execution
     from amadeus_client import AmadeusClient, AmadeusAPIError, AmadeusAuthenticationError, AmadeusRateLimitError
-    from models import HotelsListRequest, HotelOffersRequest
+    from models import HotelsListRequest, HotelOffersRequest, HotelBookingRequest
     from config import get_app_settings
 
 logger = logging.getLogger(__name__)
@@ -295,6 +295,77 @@ class AmadeusHotelsTools:
             logger.error(f"Health check error: {e}")
             return f"❌ Health check failed: {str(e)}"
     
+    # DISABLED: Hotel Booking v2 functionality
+    # This tool is implemented but disabled for security and compliance reasons
+    # Uncomment and enable only when proper payment processing and compliance measures are in place
+    
+    # async def book_hotel(
+    #     self,
+    #     offer_id: str,
+    #     guests: List[Dict[str, Any]],
+    #     room_associations: List[Dict[str, Any]],
+    #     payment: Dict[str, Any],
+    #     travel_agent: Optional[Dict[str, Any]] = None,
+    # ) -> str:
+    #     """
+    #     Book a hotel using Hotel Booking v2 API (DISABLED).
+    #     
+    #     Args:
+    #         offer_id: Hotel offer ID from search results
+    #         guests: List of guest information
+    #         room_associations: Room to guest associations
+    #         payment: Payment information
+    #         travel_agent: Optional travel agent information
+    #     
+    #     Returns:
+    #         JSON string containing booking confirmation
+    #     """
+    #     try:
+    #         # Validate inputs
+    #         if not offer_id:
+    #             return "Error: Offer ID is required"
+    #         if not guests:
+    #             return "Error: At least one guest is required"
+    #         if not room_associations:
+    #             return "Error: Room associations are required"
+    #         if not payment:
+    #             return "Error: Payment information is required"
+    #         
+    #         # Create request
+    #         request = HotelBookingRequest(
+    #             offer_id=offer_id,
+    #             guests=guests,
+    #             room_associations=room_associations,
+    #             payment=payment,
+    #             travel_agent=travel_agent,
+    #         )
+    #         
+    #         # Make API call
+    #         response = await self.client.book_hotel(request)
+    #         
+    #         # Format response
+    #         result = {
+    #             "booking_confirmation": response.data,
+    #             "status": "success",
+    #             "message": "Hotel booking completed successfully"
+    #         }
+    #         
+    #         import json
+    #         return json.dumps(result, indent=2)
+    #         
+    #     except AmadeusAuthenticationError as e:
+    #         logger.error(f"Authentication error: {e}")
+    #         return f"Error: Authentication failed - {str(e)}"
+    #     except AmadeusRateLimitError as e:
+    #         logger.error(f"Rate limit error: {e}")
+    #         return f"Error: Rate limit exceeded - {str(e)}"
+    #     except AmadeusAPIError as e:
+    #         logger.error(f"API error: {e}")
+    #         return f"Error: {str(e)}"
+    #     except Exception as e:
+    #         logger.error(f"Unexpected error: {e}")
+    #         return f"Error: Unexpected error occurred - {str(e)}"
+    
     def register_tools(self, mcp: FastMCP) -> None:
         """Register all tools with the MCP server."""
         
@@ -395,3 +466,36 @@ class AmadeusHotelsTools:
                 Status message indicating API connectivity
             """
             return await self.health_check()
+        
+        # DISABLED: Hotel Booking v2 tool registration
+        # This tool is implemented but disabled for security and compliance reasons
+        # Uncomment and enable only when proper payment processing and compliance measures are in place
+        
+        # @mcp.tool()
+        # async def book_hotel(
+        #     offer_id: str,
+        #     guests: List[Dict[str, Any]],
+        #     room_associations: List[Dict[str, Any]],
+        #     payment: Dict[str, Any],
+        #     travel_agent: Optional[Dict[str, Any]] = None,
+        # ) -> str:
+        #     """
+        #     Book a hotel using Hotel Booking v2 API (DISABLED).
+        #     
+        #     Args:
+        #         offer_id: Hotel offer ID from search results
+        #         guests: List of guest information
+        #         room_associations: Room to guest associations
+        #         payment: Payment information
+        #         travel_agent: Optional travel agent information
+        #     
+        #     Returns:
+        #         JSON string containing booking confirmation
+        #     """
+        #     return await self.book_hotel(
+        #         offer_id=offer_id,
+        #         guests=guests,
+        #         room_associations=room_associations,
+        #         payment=payment,
+        #         travel_agent=travel_agent,
+        #     )

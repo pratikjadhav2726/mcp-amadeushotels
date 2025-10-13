@@ -15,6 +15,8 @@ try:
         HotelsListResponse,
         HotelOffersRequest,
         HotelOffersResponse,
+        HotelBookingRequest,
+        HotelBookingResponse,
         AmadeusErrorResponse,
     )
 except ImportError:
@@ -24,6 +26,8 @@ except ImportError:
         HotelsListResponse,
         HotelOffersRequest,
         HotelOffersResponse,
+        HotelBookingRequest,
+        HotelBookingResponse,
         AmadeusErrorResponse,
     )
 
@@ -209,3 +213,35 @@ class AmadeusClient:
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return False
+    
+    # DISABLED: Hotel Booking v2 functionality
+    # This method is implemented but disabled for security and compliance reasons
+    # Uncomment and enable only when proper payment processing and compliance measures are in place
+    
+    # async def book_hotel(self, request: HotelBookingRequest) -> HotelBookingResponse:
+    #     """Book a hotel using Hotel Booking v2 API (DISABLED)."""
+    #     try:
+    #         # Prepare booking data for the SDK
+    #         booking_data = {
+    #             "offerId": request.offer_id,
+    #             "guests": [guest.dict(by_alias=True) for guest in request.guests],
+    #             "roomAssociations": [room.dict(by_alias=True) for room in request.room_associations],
+    #             "payment": request.payment.dict(by_alias=True),
+    #         }
+    #         
+    #         # Add travel agent if provided
+    #         if request.travel_agent:
+    #             booking_data["travelAgent"] = request.travel_agent.dict(by_alias=True)
+    #         
+    #         # Make the booking API call using the SDK
+    #         response = self.client.booking.hotel_orders.post(booking_data)
+    #         
+    #         # Convert SDK response to our model
+    #         response_data = {
+    #             "data": response.data
+    #         }
+    #         return HotelBookingResponse(**response_data)
+    #         
+    #     except Exception as e:
+    #         logger.error(f"Error booking hotel: {e}")
+    #         self._handle_sdk_error(e)
