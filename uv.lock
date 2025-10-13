@@ -3,6 +3,12 @@ revision = 3
 requires-python = ">=3.11"
 
 [[package]]
+name = "amadeus"
+version = "12.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/e0/d5f8395c2ab9ea6248c2b4f6aa1fc6857a62bd8a189510e744fd6c86c309/amadeus-12.0.0.tar.gz", hash = "sha256:80d4b844cdfc2ada937061949b04527b0c2fe229d276eeb554b78ef778b053a5", size = 36750, upload-time = "2025-03-11T13:48:30.696Z" }
+
+[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -211,8 +217,8 @@ name = "mcp-amadeus-hotels"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "amadeus" },
     { name = "click" },
-    { name = "httpx" },
     { name = "mcp" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -232,9 +238,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "amadeus", specifier = ">=12.0.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
     { name = "click", specifier = ">=8.0.0" },
-    { name = "httpx", specifier = ">=0.25.0" },
     { name = "mcp", specifier = ">=1.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
