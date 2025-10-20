@@ -4,8 +4,8 @@ Configuration management for the MCP Amadeus Hotels server.
 
 import os
 import logging
-from typing import Optional
-from pydantic import Field
+from typing import Optional, List, Union
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -29,6 +29,27 @@ class Settings(BaseSettings):
     # API Configuration
     api_timeout: float = Field(30.0, env="API_TIMEOUT", description="API request timeout")
     max_retries: int = Field(3, env="MAX_RETRIES", description="Maximum retry attempts")
+    
+    # Authentication Configuration
+    auth_enabled: bool = Field(True, env="AUTH_ENABLED", description="Enable authentication")
+    api_keys: Union[List[str], str] = Field(
+        default=["default-api-key"],
+        env="API_KEYS",
+        description="List of valid API keys (comma-separated)"
+    )
+    jwt_secret: Optional[str] = Field(
+        default=None,
+        env="JWT_SECRET",
+        description="JWT secret key for token validation"
+    )
+    
+    @field_validator('api_keys', mode='before')
+    @classmethod
+    def parse_api_keys(cls, v):
+        """Parse comma-separated API keys into a list."""
+        if isinstance(v, str):
+            return [key.strip() for key in v.split(',') if key.strip()]
+        return v
     
     class Config:
         env_file = ".env"

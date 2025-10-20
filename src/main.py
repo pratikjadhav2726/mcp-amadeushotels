@@ -6,15 +6,21 @@ import contextlib
 import logging
 import sys
 from collections.abc import AsyncIterator
-from typing import Any, Optional
+from typing import Any, Optional, Dict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import Optional
 
 import click
 import mcp.types as types
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.server.auth.provider import TokenVerifier
 from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from starlette.routing import Mount
 from starlette.types import Receive, Scope, Send
 import uvicorn
@@ -31,6 +37,67 @@ except ImportError:
     from tools import AmadeusHotelsTools
 
 logger = logging.getLogger(__name__)
+
+
+class AuthenticationMiddleware(BaseHTTPMiddleware):
+    """Middleware to enforce authentication on MCP requests."""
+    
+    def __init__(self, app, token_verifier: "Optional[SimpleTokenVerifier]"):
+        super().__init__(app)
+        self.token_verifier = token_verifier
+    
+    async def dispatch(self, request, call_next):
+        """Check authentication for MCP requests."""
+        # Skip authentication for OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        
+        # Skip authentication if no token verifier is configured
+        if not self.token_verifier:
+            return await call_next(request)
+        
+        # Check for Authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            logger.warning(f"Unauthorized request to {request.url.path} - No Authorization header")
+            return Response("Unauthorized: Missing Authorization header", status_code=401)
+        
+        # Extract token from Bearer header
+        if not auth_header.startswith("Bearer "):
+            logger.warning(f"Unauthorized request to {request.url.path} - Invalid Authorization header format")
+            return Response("Unauthorized: Invalid Authorization header format", status_code=401)
+        
+        token = auth_header[7:]  # Remove "Bearer " prefix
+        
+        # Verify token
+        user_claims = await self.token_verifier.verify_token(token)
+        if not user_claims:
+            logger.warning(f"Unauthorized request to {request.url.path} - Invalid token")
+            return Response("Unauthorized: Invalid token", status_code=401)
+        
+        # Add user information to request state for use in handlers
+        request.state.user = user_claims
+        logger.info(f"Authenticated request to {request.url.path} by user {user_claims.get('user_id', 'unknown')}")
+        
+        return await call_next(request)
+
+
+class SimpleTokenVerifier(TokenVerifier):
+    """Simple token verifier for API key authentication."""
+    
+    def __init__(self, valid_api_keys: list[str]):
+        self.valid_api_keys = set(valid_api_keys)
+    
+    async def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Verify the provided token and return user claims."""
+        if token in self.valid_api_keys:
+            return {
+                "authenticated": True,
+                "token": token,
+                "user_id": f"user_{hash(token) % 10000}",
+                "role": "api_user"
+            }
+        return None
 
 
 class InMemoryEventStore:
@@ -62,6 +129,14 @@ def create_mcp_server() -> Server:
     
     # Create low-level MCP server
     app = Server("AmadeusHotelsServer")
+    
+    # Initialize authentication if enabled
+    if settings.auth_enabled:
+        token_verifier = SimpleTokenVerifier(settings.api_keys)
+        logger.info(f"Authentication enabled with {len(settings.api_keys)} API keys")
+    else:
+        token_verifier = None
+        logger.warning("Authentication is disabled - server is not secure!")
     
     # Initialize tools
     tools = AmadeusHotelsTools()
@@ -198,12 +273,19 @@ def create_mcp_server() -> Server:
     default=False,
     help="Enable JSON responses instead of SSE streams",
 )
+@click.option(
+    "--disable-auth",
+    is_flag=True,
+    default=False,
+    help="Disable authentication (not recommended for production)",
+)
 def main(
     port: Optional[int],
     host: Optional[str],
     log_level: Optional[str],
     transport: str,
     json_response: bool,
+    disable_auth: bool,
 ) -> None:
     """Run the Amadeus Hotels MCP server."""
     try:
@@ -217,6 +299,8 @@ def main(
             settings.host = host
         if log_level is not None:
             settings.log_level = log_level
+        if disable_auth:
+            settings.auth_enabled = False
         
         # Setup logging
         setup_logging(settings.log_level)
@@ -224,6 +308,9 @@ def main(
         logger.info(f"Starting Amadeus Hotels MCP server on {settings.host}:{settings.port}")
         logger.info(f"Using transport: {transport}")
         logger.info(f"Amadeus API base URL: {settings.amadeus_base_url}")
+        logger.info(f"Authentication enabled: {settings.auth_enabled}")
+        if settings.auth_enabled:
+            logger.info(f"Number of configured API keys: {len(settings.api_keys)}")
         
         if transport == "stdio":
             logger.info("Running with stdio transport")
@@ -288,6 +375,14 @@ def main(
                 ],
                 lifespan=lifespan,
             )
+            
+            # Apply authentication middleware if enabled
+            if settings.auth_enabled:
+                token_verifier = SimpleTokenVerifier(settings.api_keys)
+                starlette_app.add_middleware(AuthenticationMiddleware, token_verifier=token_verifier)
+                logger.info(f"Authentication middleware enabled with {len(settings.api_keys)} API keys")
+            else:
+                logger.warning("Authentication is disabled - server is not secure!")
             
             # Wrap ASGI application with CORS middleware to expose Mcp-Session-Id header
             # for browser-based clients (ensures 500 errors get proper CORS headers)
