@@ -2,9 +2,13 @@
 Amadeus API client for hotels services using the official SDK.
 """
 
+import asyncio
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import date
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from contextlib import asynccontextmanager
 
 from amadeus import Client, Response
 from amadeus.client.errors import ResponseError, ClientError, ServerError, NetworkError, AuthenticationError
@@ -53,8 +57,8 @@ class AmadeusRateLimitError(AmadeusAPIError):
     pass
 
 
-class AmadeusClient:
-    """Client for Amadeus Hotels API using the official SDK."""
+class AmadeusClientPool:
+    """Thread-safe pool of Amadeus API clients for concurrent operations."""
     
     def __init__(
         self,
@@ -63,14 +67,15 @@ class AmadeusClient:
         base_url: str = "https://test.api.amadeus.com",
         timeout: float = 30.0,
         max_retries: int = 3,
+        pool_size: int = 5,
     ):
         self.api_key = api_key
         self.api_secret = api_secret
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
         self.max_retries = max_retries
+        self.pool_size = pool_size
         
-        # Initialize the official Amadeus SDK client
         # Determine hostname based on base_url
         if 'test.api.amadeus.com' in base_url:
             hostname = 'test'
@@ -79,12 +84,87 @@ class AmadeusClient:
         else:
             hostname = 'test'  # Default to test environment
         
-        self.client = Client(
-            client_id=api_key,
-            client_secret=api_secret,
-            hostname=hostname,
-            log_level='silent'  # We'll handle logging ourselves
+        # Create thread pool for concurrent operations
+        self.executor = ThreadPoolExecutor(max_workers=pool_size, thread_name_prefix="amadeus-client")
+        
+        # Create client pool
+        self._clients = []
+        self._client_lock = threading.Lock()
+        
+        # Initialize clients
+        for i in range(pool_size):
+            client = Client(
+                client_id=api_key,
+                client_secret=api_secret,
+                hostname=hostname,
+                log_level='silent'
+            )
+            self._clients.append(client)
+    
+    def get_client(self) -> Client:
+        """Get an available client from the pool."""
+        with self._client_lock:
+            if self._clients:
+                return self._clients.pop()
+            else:
+                # Create a new client if pool is empty
+                return Client(
+                    client_id=self.api_key,
+                    client_secret=self.api_secret,
+                    hostname='test' if 'test.api.amadeus.com' in self.base_url else 'production',
+                    log_level='silent'
+                )
+    
+    def return_client(self, client: Client) -> None:
+        """Return a client to the pool."""
+        with self._client_lock:
+            if len(self._clients) < self.pool_size:
+                self._clients.append(client)
+    
+    @asynccontextmanager
+    async def get_client_context(self):
+        """Context manager for getting and returning a client."""
+        client = self.get_client()
+        try:
+            yield client
+        finally:
+            self.return_client(client)
+    
+    def shutdown(self):
+        """Shutdown the client pool and executor."""
+        self.executor.shutdown(wait=True)
+
+
+class AmadeusClient:
+    """Client for Amadeus Hotels API using the official SDK with multithreading support."""
+    
+    def __init__(
+        self,
+        api_key: str,
+        api_secret: str,
+        base_url: str = "https://test.api.amadeus.com",
+        timeout: float = 30.0,
+        max_retries: int = 3,
+        pool_size: int = 5,
+    ):
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.base_url = base_url.rstrip('/')
+        self.timeout = timeout
+        self.max_retries = max_retries
+        
+        # Initialize client pool for concurrent operations
+        self.client_pool = AmadeusClientPool(
+            api_key=api_key,
+            api_secret=api_secret,
+            base_url=base_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            pool_size=pool_size
         )
+        
+        # Keep a single client for backward compatibility
+        self.client = self.client_pool.get_client()
     
     def _handle_sdk_error(self, error: Exception) -> None:
         """Convert SDK errors to our custom exceptions."""
@@ -213,6 +293,111 @@ class AmadeusClient:
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return False
+    
+    async def search_hotels_by_locations_concurrent(self, requests: List[HotelsListRequest]) -> List[HotelsListResponse]:
+        """Search for hotels by multiple locations concurrently."""
+        async def search_single_location(request: HotelsListRequest) -> HotelsListResponse:
+            """Search hotels for a single location."""
+            async with self.client_pool.get_client_context() as client:
+                # Prepare parameters for the SDK call
+                params = {
+                    "latitude": request.latitude,
+                    "longitude": request.longitude,
+                    "radius": request.radius,
+                    "radiusUnit": request.radius_unit,
+                }
+                
+                # Add optional parameters
+                if request.chain_codes:
+                    params["chainCodes"] = ",".join(request.chain_codes)
+                if request.amenities:
+                    params["amenities"] = ",".join(request.amenities)
+                if request.ratings:
+                    params["ratings"] = ",".join(request.ratings)
+                if request.hotel_source:
+                    params["hotelSource"] = request.hotel_source
+                
+                # Make the API call using the SDK
+                response = client.reference_data.locations.hotels.by_geocode.get(**params)
+                
+                # Convert SDK response to our model
+                response_data = {
+                    "data": response.data,
+                    "meta": {}  # SDK doesn't return meta, so we provide empty dict
+                }
+                return HotelsListResponse(**response_data)
+        
+        # Execute all searches concurrently
+        tasks = [search_single_location(req) for req in requests]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Handle exceptions and return successful results
+        responses = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Error searching location {i}: {result}")
+                # Return empty response for failed requests
+                responses.append(HotelsListResponse(data=[], meta={}))
+            else:
+                responses.append(result)
+        
+        return responses
+    
+    async def search_hotel_offers_batch(self, requests: List[HotelOffersRequest]) -> List[HotelOffersResponse]:
+        """Search for hotel offers for multiple requests concurrently."""
+        async def search_single_offer(request: HotelOffersRequest) -> HotelOffersResponse:
+            """Search hotel offers for a single request."""
+            async with self.client_pool.get_client_context() as client:
+                # Prepare parameters for the SDK call
+                params = {
+                    "hotelIds": ",".join(request.hotel_ids),
+                    "adults": request.adults,
+                    "checkInDate": request.check_in_date.strftime("%Y-%m-%d"),
+                    "checkOutDate": request.check_out_date.strftime("%Y-%m-%d"),
+                    "roomQuantity": request.room_quantity,
+                    "paymentPolicy": request.payment_policy,
+                    "bestRateOnly": request.best_rate_only,
+                    "includeClosed": request.include_closed,
+                }
+                
+                # Add optional parameters
+                if request.currency:
+                    params["currency"] = request.currency
+                if request.price_range:
+                    params["priceRange"] = request.price_range
+                if request.board_type:
+                    params["boardType"] = request.board_type
+                if request.lang:
+                    params["lang"] = request.lang
+                
+                # Make the API call using the SDK
+                response = client.shopping.hotel_offers_search.get(**params)
+                
+                # Convert SDK response to our model
+                response_data = {
+                    "data": response.data
+                }
+                return HotelOffersResponse(**response_data)
+        
+        # Execute all searches concurrently
+        tasks = [search_single_offer(req) for req in requests]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Handle exceptions and return successful results
+        responses = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Error searching offers {i}: {result}")
+                # Return empty response for failed requests
+                responses.append(HotelOffersResponse(data=[]))
+            else:
+                responses.append(result)
+        
+        return responses
+    
+    def shutdown(self):
+        """Shutdown the client pool."""
+        self.client_pool.shutdown()
     
     # DISABLED: Hotel Booking v2 functionality
     # This method is implemented but disabled for security and compliance reasons

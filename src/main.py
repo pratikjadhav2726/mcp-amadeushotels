@@ -151,6 +151,16 @@ def create_mcp_server() -> Server:
                 result = await tools.search_hotel_offers(**arguments)
             elif name == "health_check":
                 result = await tools.health_check()
+            elif name == "search_hotels_by_multiple_locations":
+                result = await tools.search_hotels_by_multiple_locations(**arguments)
+            elif name == "search_hotel_offers_batch":
+                result = await tools.search_hotel_offers_batch(**arguments)
+            elif name == "get_cache_stats":
+                result = await tools.get_cache_stats()
+            elif name == "clear_cache":
+                result = await tools.clear_cache()
+            elif name == "get_performance_stats":
+                result = await tools.get_performance_stats()
             # DISABLED: Hotel Booking v2 tool handler
             # elif name == "book_hotel":
             #     result = await tools.book_hotel(**arguments)
@@ -209,6 +219,81 @@ def create_mcp_server() -> Server:
             types.Tool(
                 name="health_check",
                 description="Check the health status of the Amadeus API connection",
+                inputSchema={"type": "object", "properties": {}},
+            ),
+            types.Tool(
+                name="search_hotels_by_multiple_locations",
+                description="Search for hotels near multiple locations concurrently for improved performance",
+                inputSchema={
+                    "type": "object",
+                    "required": ["locations"],
+                    "properties": {
+                        "locations": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["latitude", "longitude"],
+                                "properties": {
+                                    "latitude": {"type": "number", "description": "Latitude coordinate"},
+                                    "longitude": {"type": "number", "description": "Longitude coordinate"},
+                                }
+                            },
+                            "description": "List of location objects with latitude and longitude"
+                        },
+                        "radius": {"type": "integer", "description": "Search radius in kilometers"},
+                        "radius_unit": {"type": "string", "description": "Unit for radius (KM or MILE)"},
+                        "amenities": {"type": "array", "items": {"type": "string"}, "description": "Desired amenities"},
+                        "ratings": {"type": "array", "items": {"type": "string"}, "description": "Hotel star ratings"},
+                        "chain_codes": {"type": "array", "items": {"type": "string"}, "description": "Hotel chain codes"},
+                        "hotel_source": {"type": "string", "description": "Hotel source (BEDBANK, DIRECTCHAIN, ALL)"},
+                    },
+                },
+            ),
+            types.Tool(
+                name="search_hotel_offers_batch",
+                description="Search for hotel offers for multiple requests concurrently for improved performance",
+                inputSchema={
+                    "type": "object",
+                    "required": ["hotel_offer_requests"],
+                    "properties": {
+                        "hotel_offer_requests": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["hotel_ids", "check_in_date", "check_out_date"],
+                                "properties": {
+                                    "hotel_ids": {"type": "array", "items": {"type": "string"}, "description": "List of Amadeus hotel IDs"},
+                                    "check_in_date": {"type": "string", "description": "Check-in date (YYYY-MM-DD)"},
+                                    "check_out_date": {"type": "string", "description": "Check-out date (YYYY-MM-DD)"},
+                                    "adults": {"type": "integer", "description": "Number of adult guests"},
+                                    "room_quantity": {"type": "integer", "description": "Number of rooms"},
+                                    "currency": {"type": "string", "description": "Currency code"},
+                                    "price_range": {"type": "string", "description": "Price range filter"},
+                                    "payment_policy": {"type": "string", "description": "Payment policy filter"},
+                                    "board_type": {"type": "string", "description": "Board type filter"},
+                                    "include_closed": {"type": "boolean", "description": "Include sold out properties"},
+                                    "best_rate_only": {"type": "boolean", "description": "Return only best rates"},
+                                    "lang": {"type": "string", "description": "Language code"},
+                                }
+                            },
+                            "description": "List of hotel offer request objects"
+                        },
+                    },
+                },
+            ),
+            types.Tool(
+                name="get_cache_stats",
+                description="Get cache statistics and performance metrics",
+                inputSchema={"type": "object", "properties": {}},
+            ),
+            types.Tool(
+                name="clear_cache",
+                description="Clear the response cache",
+                inputSchema={"type": "object", "properties": {}},
+            ),
+            types.Tool(
+                name="get_performance_stats",
+                description="Get performance statistics for multithreaded operations",
                 inputSchema={"type": "object", "properties": {}},
             ),
             # DISABLED: Hotel Booking v2 tool

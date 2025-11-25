@@ -30,6 +30,16 @@ class Settings(BaseSettings):
     api_timeout: float = Field(30.0, env="API_TIMEOUT", description="API request timeout")
     max_retries: int = Field(3, env="MAX_RETRIES", description="Maximum retry attempts")
     
+    # Multithreading Configuration
+    client_pool_size: int = Field(5, env="CLIENT_POOL_SIZE", description="Number of concurrent API clients")
+    max_concurrent_requests: int = Field(10, env="MAX_CONCURRENT_REQUESTS", description="Maximum concurrent API requests")
+    enable_connection_pooling: bool = Field(True, env="ENABLE_CONNECTION_POOLING", description="Enable HTTP connection pooling")
+    
+    # Caching Configuration
+    enable_caching: bool = Field(False, env="ENABLE_CACHING", description="Enable response caching")
+    cache_ttl: int = Field(300, env="CACHE_TTL", description="Cache time-to-live in seconds")
+    cache_max_size: int = Field(1000, env="CACHE_MAX_SIZE", description="Maximum cache entries")
+    
     # Authentication Configuration
     auth_enabled: bool = Field(True, env="AUTH_ENABLED", description="Enable authentication")
     api_keys: Union[List[str], str] = Field(
