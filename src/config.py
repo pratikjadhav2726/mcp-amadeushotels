@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     
     # Server Configuration
     port: int = Field(3000, env="PORT", description="Server port")
-    host: str = Field("127.0.0.1", env="HOST", description="Server host")
+    host: str = Field("0.0.0.0", env="HOST", description="Server host")
     log_level: str = Field("INFO", env="LOG_LEVEL", description="Logging level")
     
     # API Configuration
