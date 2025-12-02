@@ -48,6 +48,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request, call_next):
         """Check authentication for MCP requests."""
+        path = request.url.path
+        
         # Skip authentication for OPTIONS requests (CORS preflight)
         if request.method == "OPTIONS":
             return await call_next(request)
@@ -56,28 +58,57 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         if not self.token_verifier:
             return await call_next(request)
         
+        # Allow public endpoints without authentication
+        public_paths = [
+            "/",  # Root endpoint for health checks
+            "/health",
+            "/healthz",
+            "/favicon.ico",
+        ]
+        
+        # Allow well-known endpoints (OAuth/OpenID discovery)
+        if path.startswith("/.well-known/"):
+            return await call_next(request)
+        
+        # Allow public paths
+        if path in public_paths:
+            return await call_next(request)
+        
+        # Require authentication for all protected endpoints including /mcp
         # Check for Authorization header
         auth_header = request.headers.get("Authorization")
         if not auth_header:
-            logger.warning(f"Unauthorized request to {request.url.path} - No Authorization header")
-            return Response("Unauthorized: Missing Authorization header", status_code=401)
+            logger.warning(f"Unauthorized request to {path} - No Authorization header")
+            return Response(
+                "Unauthorized: Missing Authorization header. Please include 'Authorization: Bearer <api_key>' header.",
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"}
+            )
         
         # Extract token from Bearer header
         if not auth_header.startswith("Bearer "):
-            logger.warning(f"Unauthorized request to {request.url.path} - Invalid Authorization header format")
-            return Response("Unauthorized: Invalid Authorization header format", status_code=401)
+            logger.warning(f"Unauthorized request to {path} - Invalid Authorization header format")
+            return Response(
+                "Unauthorized: Invalid Authorization header format. Expected 'Bearer <api_key>'.",
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"}
+            )
         
         token = auth_header[7:]  # Remove "Bearer " prefix
         
         # Verify token
         user_claims = await self.token_verifier.verify_token(token)
         if not user_claims:
-            logger.warning(f"Unauthorized request to {request.url.path} - Invalid token")
-            return Response("Unauthorized: Invalid token", status_code=401)
+            logger.warning(f"Unauthorized request to {path} - Invalid token")
+            return Response(
+                "Unauthorized: Invalid API key.",
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"}
+            )
         
         # Add user information to request state for use in handlers
         request.state.user = user_claims
-        logger.info(f"Authenticated request to {request.url.path} by user {user_claims.get('user_id', 'unknown')}")
+        logger.debug(f"Authenticated request to {path} by user {user_claims.get('user_id', 'unknown')}")
         
         return await call_next(request)
 
