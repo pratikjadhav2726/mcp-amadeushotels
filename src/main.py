@@ -64,10 +64,12 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             "/health",
             "/healthz",
             "/favicon.ico",
+            "/register",  # MCP client registration endpoint
         ]
         
         # Allow well-known endpoints (OAuth/OpenID discovery)
-        if path.startswith("/.well-known/"):
+        # Check both /.well-known/ and /mcp/.well-known/ paths
+        if path.startswith("/.well-known/") or path.startswith("/mcp/.well-known/"):
             return await call_next(request)
         
         # Allow public paths
