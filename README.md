@@ -31,13 +31,20 @@ uv pip install -e .
 
 ## Configuration
 
-Create a `.env` file with your Amadeus API credentials:
+Create a `.env` file with your Amadeus API credentials and optional authentication settings:
 
 ```env
+# Amadeus API Configuration
 AMADEUS_API_KEY=your_api_key_here
 AMADEUS_API_SECRET=your_api_secret_here
 AMADEUS_BASE_URL=https://test.api.amadeus.com
+
+# Server Authentication (optional, enabled by default)
+AUTH_ENABLED=true
+API_KEYS=your-secure-api-key-1,your-secure-api-key-2
 ```
+
+See [Authentication Documentation](docs/AUTHENTICATION.md) for detailed authentication setup.
 
 ## Usage
 

@@ -6,10 +6,7 @@ import contextlib
 import logging
 import sys
 from collections.abc import AsyncIterator
-from typing import Any, Optional, Dict, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from typing import Optional
+from typing import Any, Optional
 
 import click
 import mcp.types as types
@@ -17,7 +14,6 @@ from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
-from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.authentication import AuthenticationError
 from starlette.middleware.cors import CORSMiddleware
@@ -155,14 +151,6 @@ def create_mcp_server() -> Server:
     
     # Create low-level MCP server
     app = Server("AmadeusHotelsServer")
-    
-    # Initialize authentication if enabled
-    if settings.auth_enabled:
-        token_verifier = SimpleTokenVerifier(settings.api_keys)
-        logger.info(f"Authentication enabled with {len(settings.api_keys)} API keys")
-    else:
-        token_verifier = None
-        logger.warning("Authentication is disabled - server is not secure!")
     
     # Initialize tools
     tools = AmadeusHotelsTools()

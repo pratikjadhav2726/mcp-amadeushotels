@@ -1,12 +1,13 @@
 # MCP Server Authentication Implementation
 
-This document describes the authentication implementation for the Amadeus Hotels MCP server using the official MCP SDK.
+This document describes the authentication implementation for the Amadeus Hotels MCP server using the official MCP SDK (v1.23.0+).
 
 ## Overview
 
-The server now includes built-in authentication using the official MCP SDK's authentication components:
+The server uses the official MCP SDK's built-in authentication components:
 - `mcp.server.auth.provider.TokenVerifier` - Token verification protocol
-- `mcp.server.auth.middleware.bearer_auth` - Bearer token authentication middleware
+- `mcp.server.auth.middleware.bearer_auth.BearerAuthBackend` - Bearer token authentication backend
+- `mcp.server.auth.provider.AccessToken` - Access token model
 
 ## Authentication Methods
 
@@ -24,7 +25,20 @@ Authorization: Bearer your-api-key-here
 - Configure `API_KEYS` with comma-separated valid API keys
 - Example: `API_KEYS=key1,key2,key3`
 
-### 2. JWT Authentication (Ready for Implementation)
+### 2. Public Endpoints
+
+The following endpoints are publicly accessible and do not require authentication:
+- `/` - Root endpoint for health checks
+- `/health` - Health check endpoint
+- `/healthz` - Alternative health check endpoint
+- `/favicon.ico` - Favicon
+- `/register` - MCP client registration endpoint
+- `/.well-known/*` - OAuth/OpenID discovery endpoints
+- `/mcp/.well-known/*` - MCP OAuth/OpenID discovery endpoints
+
+All other endpoints under `/mcp/` require valid Bearer token authentication.
+
+### 3. JWT Authentication (Ready for Implementation)
 
 The configuration includes JWT secret support for future JWT token validation.
 
@@ -43,43 +57,73 @@ JWT_SECRET=your-jwt-secret-key-here
 
 ```bash
 # Disable authentication (not recommended for production)
-python -m src.main --disable-auth
+uv run python -m src.main --disable-auth
 
 # Other options remain the same
-python -m src.main --port 8080 --host 0.0.0.0
+uv run python -m src.main --port 8080 --host 0.0.0.0
 ```
 
 ## Implementation Details
 
 ### TokenVerifier Class
 
+The `SimpleTokenVerifier` implements the MCP SDK's `TokenVerifier` protocol and returns `AccessToken` objects:
+
 ```python
 class SimpleTokenVerifier(TokenVerifier):
-    """Simple token verifier for API key authentication."""
+    """Simple token verifier for API key authentication using MCP SDK's TokenVerifier protocol."""
     
     def __init__(self, valid_api_keys: list[str]):
         self.valid_api_keys = set(valid_api_keys)
     
-    async def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
-        """Verify the provided token and return user claims."""
+    async def verify_token(self, token: str) -> Optional[AccessToken]:
+        """Verify the provided token and return AccessToken compatible with MCP SDK's BearerAuthBackend."""
         if token in self.valid_api_keys:
-            return {
-                "authenticated": True,
-                "token": token,
-                "user_id": f"user_{hash(token) % 10000}",
-                "role": "api_user"
-            }
+            from mcp.server.auth.provider import AccessToken
+            return AccessToken(
+                token=token,
+                client_id=f"user_{hash(token) % 10000}",
+                scopes=["api_access"],
+                expires_at=None  # API keys don't expire
+            )
         return None
+```
+
+### Conditional Authentication Middleware
+
+The `ConditionalAuthMiddleware` wraps the SDK's `BearerAuthBackend` and handles public vs protected paths:
+
+```python
+class ConditionalAuthMiddleware(BaseHTTPMiddleware):
+    """Middleware that conditionally applies authentication based on path."""
+    
+    def __init__(self, app, auth_backend):
+        super().__init__(app)
+        self.auth_backend = auth_backend
+    
+    async def dispatch(self, request, call_next):
+        # Skip authentication for public paths
+        if self._is_public_path(request.url.path):
+            return await call_next(request)
+        
+        # Apply authentication for protected paths using SDK's BearerAuthBackend
+        auth_result = await self.auth_backend.authenticate(request)
+        # ... handle authentication result
 ```
 
 ### Server Integration
 
-The authentication middleware is applied to the MCP server:
+The authentication middleware is applied to the Starlette app:
 
 ```python
 if settings.auth_enabled:
     token_verifier = SimpleTokenVerifier(settings.api_keys)
-    app = bearer_auth(app, token_verifier)
+    auth_backend = BearerAuthBackend(token_verifier=token_verifier)
+    
+    starlette_app.add_middleware(
+        ConditionalAuthMiddleware,
+        auth_backend=auth_backend
+    )
 ```
 
 ## Usage Examples
@@ -90,10 +134,10 @@ if settings.auth_enabled:
 # Using environment variables
 export AUTH_ENABLED=true
 export API_KEYS="my-secure-key,another-key"
-python -m src.main
+uv run python -m src.main
 
 # Using command line (disable auth)
-python -m src.main --disable-auth
+uv run python -m src.main --disable-auth
 ```
 
 ### 2. Client Requests
@@ -115,13 +159,17 @@ curl -H "Content-Type: application/json" \
 
 ### 3. Error Responses
 
-**Unauthorized (401):**
-```json
-{
-  "error": "Unauthorized",
-  "message": "Invalid or missing authentication token"
-}
+**Unauthorized - Missing Authorization Header (401):**
 ```
+Unauthorized: Missing Authorization header. Please include 'Authorization: Bearer <api_key>' header.
+```
+
+**Unauthorized - Invalid Token (401):**
+```
+Unauthorized: Invalid API key.
+```
+
+Both responses include the `WWW-Authenticate: Bearer` header.
 
 ## Security Considerations
 
@@ -144,16 +192,23 @@ curl -H "Content-Type: application/json" \
 
 ## Testing
 
-Run the authentication test:
+Run the authentication tests:
 
 ```bash
-python test_auth.py
+# Run all authentication tests
+uv run pytest tests/test_authentication.py -v
+
+# Run specific test classes
+uv run pytest tests/test_authentication.py::TestSimpleTokenVerifier -v
+uv run pytest tests/test_authentication.py::TestConditionalAuthMiddleware -v
 ```
 
-This will test:
-- Configuration loading
-- Token verification with valid/invalid keys
-- User claims generation
+The test suite covers:
+- Token verification with valid/invalid/empty tokens
+- Public path detection and access
+- Protected endpoint authentication requirements
+- Bearer token format handling
+- Integration with MCP SDK components
 
 ## Future Enhancements
 
