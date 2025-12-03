@@ -1,15 +1,23 @@
 # MCP Amadeus Hotels Server
 
+[![CI](https://github.com/your-username/mcp-amadeushotels/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/mcp-amadeushotels/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
 A Model Context Protocol (MCP) server that provides access to Amadeus Hotels APIs for finding hotels by location and getting pricing information. This server uses the official [Amadeus Python SDK](https://github.com/amadeus4dev/amadeus-python) for reliable API integration.
 
 ## Features
 
 - **Hotel List Tool**: Find hotels by geocode/city with distance information
 - **Hotel Search Tool**: Get hotel prices and availability for specific hotels
+- **Concurrent Operations**: Multi-location search and batch processing for improved performance
+- **Caching**: Intelligent response caching with TTL support
+- **Performance Monitoring**: Real-time metrics and statistics
 - Built with FastMCP for optimal performance
 - Uses official Amadeus Python SDK for robust API integration
 - Comprehensive error handling and validation
 - Type-safe with Pydantic models
+- Docker support for easy deployment
 
 ## Installation
 
@@ -23,13 +31,20 @@ uv pip install -e .
 
 ## Configuration
 
-Create a `.env` file with your Amadeus API credentials:
+Create a `.env` file with your Amadeus API credentials and optional authentication settings:
 
 ```env
+# Amadeus API Configuration
 AMADEUS_API_KEY=your_api_key_here
 AMADEUS_API_SECRET=your_api_secret_here
 AMADEUS_BASE_URL=https://test.api.amadeus.com
+
+# Server Authentication (optional, enabled by default)
+AUTH_ENABLED=true
+API_KEYS=your-secure-api-key-1,your-secure-api-key-2
 ```
+
+See [Authentication Documentation](docs/AUTHENTICATION.md) for detailed authentication setup.
 
 ## Usage
 
@@ -69,12 +84,6 @@ AMADEUS_BASE_URL=https://test.api.amadeus.com
 ### Run the server
 
 ```bash
-# If uv is not in your PATH, use the batch file:
-.\uv.bat run src/main.py
-
-# Or run uv directly from its installation path:
-C:\Users\pjadhav\.local\bin\uv.exe run src/main.py
-
 # Run with streamable HTTP transport (default)
 uv run src/main.py
 
@@ -180,6 +189,14 @@ uv run mypy src/
 uv run examples/example_usage.py
 ```
 
+## Documentation
+
+- [Installation Guide](docs/)
+- [Authentication](docs/AUTHENTICATION.md)
+- [Deployment Guide](docs/DEPLOYMENT.md)
+- [Multithreading Implementation](docs/MULTITHREADING_IMPLEMENTATION.md)
+- [Project Summary](docs/PROJECT_SUMMARY.md)
+
 ## API Reference
 
 This server integrates with the following Amadeus APIs using the official Python SDK:
@@ -191,3 +208,27 @@ The server uses the [Amadeus Python SDK](https://github.com/amadeus4dev/amadeus-
 - Built-in error handling and retry logic
 - Rate limiting protection
 - Consistent API response handling
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
+
+- Code of Conduct
+- Development setup
+- Coding standards
+- Pull request process
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/your-username/mcp-amadeushotels/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/your-username/mcp-amadeushotels/discussions)
+
+## Acknowledgments
+
+- [Amadeus for Developers](https://developers.amadeus.com/) for the Hotels API
+- [Model Context Protocol](https://modelcontextprotocol.io/) for the MCP specification
+- All contributors who help improve this project

@@ -287,3 +287,13 @@ temp/
 
 # Project specific
 # Add any project-specific files or directories to ignore here
+
+# Test data files
+tests/test_data/*.json
+!tests/test_data/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+flights.json
+h.json
