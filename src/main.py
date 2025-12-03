@@ -16,8 +16,10 @@ import mcp.types as types
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.auth.provider import TokenVerifier
+from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
 from pydantic import AnyUrl
 from starlette.applications import Starlette
+from starlette.authentication import AuthenticationError
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -39,97 +41,88 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class AuthenticationMiddleware(BaseHTTPMiddleware):
-    """Middleware to enforce authentication on MCP requests."""
+class ConditionalAuthMiddleware(BaseHTTPMiddleware):
+    """Middleware that conditionally applies authentication based on path."""
     
-    def __init__(self, app, token_verifier: "Optional[SimpleTokenVerifier]"):
+    # Public endpoints that don't require authentication
+    PUBLIC_PATHS = [
+        "/",  # Root endpoint for health checks
+        "/health",
+        "/healthz",
+        "/favicon.ico",
+        "/register",  # MCP client registration endpoint
+    ]
+    
+    def __init__(self, app, auth_backend):
         super().__init__(app)
-        self.token_verifier = token_verifier
+        self.auth_backend = auth_backend
+    
+    def _is_public_path(self, path: str) -> bool:
+        """Check if a path is public and doesn't require authentication."""
+        return (
+            path in self.PUBLIC_PATHS or
+            path.startswith("/.well-known/") or
+            path.startswith("/mcp/.well-known/")
+        )
     
     async def dispatch(self, request, call_next):
-        """Check authentication for MCP requests."""
+        """Apply authentication only for protected paths."""
         path = request.url.path
         
         # Skip authentication for OPTIONS requests (CORS preflight)
         if request.method == "OPTIONS":
             return await call_next(request)
         
-        # Skip authentication if no token verifier is configured
-        if not self.token_verifier:
+        # Skip authentication for public paths
+        if self._is_public_path(path):
+            # Set anonymous user for public paths
+            request.scope["user"] = None
+            request.scope["auth"] = None
             return await call_next(request)
         
-        # Allow public endpoints without authentication
-        public_paths = [
-            "/",  # Root endpoint for health checks
-            "/health",
-            "/healthz",
-            "/favicon.ico",
-            "/register",  # MCP client registration endpoint
-        ]
-        
-        # Allow well-known endpoints (OAuth/OpenID discovery)
-        # Check both /.well-known/ and /mcp/.well-known/ paths
-        if path.startswith("/.well-known/") or path.startswith("/mcp/.well-known/"):
-            return await call_next(request)
-        
-        # Allow public paths
-        if path in public_paths:
-            return await call_next(request)
-        
-        # Require authentication for all protected endpoints including /mcp
-        # Check for Authorization header
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            logger.warning(f"Unauthorized request to {path} - No Authorization header")
-            return Response(
-                "Unauthorized: Missing Authorization header. Please include 'Authorization: Bearer <api_key>' header.",
-                status_code=401,
-                headers={"WWW-Authenticate": "Bearer"}
-            )
-        
-        # Extract token from Bearer header
-        if not auth_header.startswith("Bearer "):
-            logger.warning(f"Unauthorized request to {path} - Invalid Authorization header format")
-            return Response(
-                "Unauthorized: Invalid Authorization header format. Expected 'Bearer <api_key>'.",
-                status_code=401,
-                headers={"WWW-Authenticate": "Bearer"}
-            )
-        
-        token = auth_header[7:]  # Remove "Bearer " prefix
-        
-        # Verify token
-        user_claims = await self.token_verifier.verify_token(token)
-        if not user_claims:
-            logger.warning(f"Unauthorized request to {path} - Invalid token")
+        # Apply authentication for protected paths using SDK's BearerAuthBackend
+        try:
+            auth_result = await self.auth_backend.authenticate(request)
+            if auth_result:
+                request.scope["user"] = auth_result[0]
+                request.scope["auth"] = auth_result[1]
+            else:
+                # No authentication provided - reject
+                logger.warning(f"Unauthorized request to {path} - No Authorization header")
+                return Response(
+                    "Unauthorized: Missing Authorization header. Please include 'Authorization: Bearer <api_key>' header.",
+                    status_code=401,
+                    headers={"WWW-Authenticate": "Bearer"}
+                )
+        except AuthenticationError as exc:
+            logger.warning(f"Unauthorized request to {path} - {exc}")
             return Response(
                 "Unauthorized: Invalid API key.",
                 status_code=401,
                 headers={"WWW-Authenticate": "Bearer"}
             )
         
-        # Add user information to request state for use in handlers
-        request.state.user = user_claims
-        logger.debug(f"Authenticated request to {path} by user {user_claims.get('user_id', 'unknown')}")
-        
         return await call_next(request)
 
 
 class SimpleTokenVerifier(TokenVerifier):
-    """Simple token verifier for API key authentication."""
+    """Simple token verifier for API key authentication using MCP SDK's TokenVerifier protocol."""
     
     def __init__(self, valid_api_keys: list[str]):
         self.valid_api_keys = set(valid_api_keys)
     
-    async def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
-        """Verify the provided token and return user claims."""
+    async def verify_token(self, token: str) -> Optional[Any]:
+        """Verify the provided token and return AccessToken compatible with MCP SDK's BearerAuthBackend."""
         if token in self.valid_api_keys:
-            return {
-                "authenticated": True,
-                "token": token,
-                "user_id": f"user_{hash(token) % 10000}",
-                "role": "api_user"
-            }
+            from mcp.server.auth.provider import AccessToken
+            # Return AccessToken as expected by BearerAuthBackend
+            # The BearerAuthBackend expects AccessToken with expires_at, but we can return None for non-expiring tokens
+            return AccessToken(
+                token=token,
+                client_id=f"user_{hash(token) % 10000}",
+                scopes=["api_access"],
+                expires_at=None  # API keys don't expire
+            )
         return None
 
 
@@ -494,11 +487,17 @@ def main(
                 lifespan=lifespan,
             )
             
-            # Apply authentication middleware if enabled
+            # Apply authentication middleware using SDK's BearerAuthBackend if enabled
             if settings.auth_enabled:
                 token_verifier = SimpleTokenVerifier(settings.api_keys)
-                starlette_app.add_middleware(AuthenticationMiddleware, token_verifier=token_verifier)
-                logger.info(f"Authentication middleware enabled with {len(settings.api_keys)} API keys")
+                auth_backend = BearerAuthBackend(token_verifier=token_verifier)
+                
+                # Use conditional auth middleware that uses SDK's BearerAuthBackend
+                starlette_app.add_middleware(
+                    ConditionalAuthMiddleware,
+                    auth_backend=auth_backend
+                )
+                logger.info(f"Authentication middleware enabled with {len(settings.api_keys)} API keys using MCP SDK BearerAuthBackend")
             else:
                 logger.warning("Authentication is disabled - server is not secure!")
             

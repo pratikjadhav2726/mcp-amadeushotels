@@ -7,7 +7,7 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.23.0",  # Updated to latest version with improved authentication support
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
