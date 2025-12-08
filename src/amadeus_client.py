@@ -230,8 +230,9 @@ class AmadeusClient:
             
             # Convert SDK response to our model
             # The SDK returns the data directly, so we need to wrap it in the expected format
+            # Handle case where response.data might be None
             response_data = {
-                "data": response.data,
+                "data": response.data if response.data is not None else [],
                 "meta": {}  # SDK doesn't return meta, so we provide empty dict
             }
             return HotelsListResponse(**response_data)
@@ -270,8 +271,9 @@ class AmadeusClient:
             
             # Convert SDK response to our model
             # The SDK returns the data directly, so we need to wrap it in the expected format
+            # Handle case where response.data might be None
             response_data = {
-                "data": response.data
+                "data": response.data if response.data is not None else []
             }
             return HotelOffersResponse(**response_data)
             
@@ -321,8 +323,9 @@ class AmadeusClient:
                 response = client.reference_data.locations.hotels.by_geocode.get(**params)
                 
                 # Convert SDK response to our model
+                # Handle case where response.data might be None
                 response_data = {
-                    "data": response.data,
+                    "data": response.data if response.data is not None else [],
                     "meta": {}  # SDK doesn't return meta, so we provide empty dict
                 }
                 return HotelsListResponse(**response_data)
@@ -374,8 +377,9 @@ class AmadeusClient:
                 response = client.shopping.hotel_offers_search.get(**params)
                 
                 # Convert SDK response to our model
+                # Handle case where response.data might be None
                 response_data = {
-                    "data": response.data
+                    "data": response.data if response.data is not None else []
                 }
                 return HotelOffersResponse(**response_data)
         
