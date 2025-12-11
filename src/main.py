@@ -169,12 +169,6 @@ def create_mcp_server() -> Server:
                 result = await tools.search_hotels_by_multiple_locations(**arguments)
             elif name == "search_hotel_offers_batch":
                 result = await tools.search_hotel_offers_batch(**arguments)
-            elif name == "get_cache_stats":
-                result = await tools.get_cache_stats()
-            elif name == "clear_cache":
-                result = await tools.clear_cache()
-            elif name == "get_performance_stats":
-                result = await tools.get_performance_stats()
             # DISABLED: Hotel Booking v2 tool handler
             # elif name == "book_hotel":
             #     result = await tools.book_hotel(**arguments)
@@ -294,21 +288,6 @@ def create_mcp_server() -> Server:
                         },
                     },
                 },
-            ),
-            types.Tool(
-                name="get_cache_stats",
-                description="Get cache statistics and performance metrics",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            types.Tool(
-                name="clear_cache",
-                description="Clear the response cache",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            types.Tool(
-                name="get_performance_stats",
-                description="Get performance statistics for multithreaded operations",
-                inputSchema={"type": "object", "properties": {}},
             ),
             # DISABLED: Hotel Booking v2 tool
             # This tool is implemented but disabled for security and compliance reasons
