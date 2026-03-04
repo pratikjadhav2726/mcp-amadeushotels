@@ -19,7 +19,7 @@ from starlette.authentication import AuthenticationError
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
-from starlette.routing import Mount
+from starlette.routing import Mount, Route
 from starlette.types import Receive, Scope, Send
 import uvicorn
 
@@ -446,9 +446,17 @@ def main(
                         logger.info("Application shutting down...")
             
             # Create an ASGI application using the transport
+            async def health_endpoint(request) -> Response:
+                """Simple health check endpoint for container and load balancer checks."""
+                return Response(content="OK", media_type="text/plain")
+
             starlette_app = Starlette(
                 debug=True,
                 routes=[
+                    # Public health endpoints
+                    Route("/", health_endpoint),
+                    Route("/health", health_endpoint),
+                    Route("/healthz", health_endpoint),
                     Mount("/mcp", app=handle_streamable_http),
                 ],
                 lifespan=lifespan,
